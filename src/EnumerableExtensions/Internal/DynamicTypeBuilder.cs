@@ -3,8 +3,11 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Text.Json.Serialization;
 
-namespace EnumerableExtensions;
+namespace EnumerableExtensions.Internal;
 
+/// <summary>
+/// Generates <see cref="Type" /> from input parameters.
+/// </summary>
 /// <remarks>
 /// Thanks to Ethan J.Brown: http://stackoverflow.com/questions/606104/how-to-create-linq-expression-tree-with-anonymous-type-in-it/723018#723018.
 /// </remarks>
@@ -21,17 +24,23 @@ public static class DynamicTypeBuilder
             .DefineDynamicModule(AssemblyName.Name);
     }
 
-    public static Type GetDynamicType(Dictionary<string, Type> fields, Type? baseType = null, Type[]? interfaces = null)
+    /// <summary>
+    /// Returns dynamically created <see cref="Type" /> that contains only specific fields.
+    /// </summary>
+    /// <param name="fields"> List of fields that returning type should contain. </param>
+    /// <param name="baseType"> Base type of returning type. </param>
+    /// <returns> <see cref="Type" /> that contains only specified fields. </returns>
+    public static Type GetDynamicType(Dictionary<string, Type> fields, Type? baseType = null)
     {
         ArgumentNullException.ThrowIfNull(fields);
         ArgumentOutOfRangeException.ThrowIfZero(fields.Count);
 
         string typeKey = GetTypeKey(fields);
 
-        return BuiltTypes.GetOrAdd(typeKey, (_) => BuildDynamicType(fields, baseType, interfaces));
+        return BuiltTypes.GetOrAdd(typeKey, (_) => BuildDynamicType(fields, baseType));
     }
 
-    private static Type BuildDynamicType(Dictionary<string, Type> fields, Type? baseType, Type[]? interfaces)
+    private static Type BuildDynamicType(Dictionary<string, Type> fields, Type? baseType)
     {
         string typeName = "DynamicLinqType" + BuiltTypes.Count.ToString();
 
@@ -39,9 +48,9 @@ public static class DynamicTypeBuilder
             typeName,
             TypeAttributes.Public | TypeAttributes.Class,
             baseType,
-            interfaces ?? Type.EmptyTypes);
+            Type.EmptyTypes);
 
-        CustomAttributeBuilder attributeBuilder = new CustomAttributeBuilder(
+        CustomAttributeBuilder attributeBuilder = new(
             typeof(JsonIncludeAttribute).GetConstructor(Type.EmptyTypes), []);
 
         foreach (var (name, type) in fields)
