@@ -16,20 +16,31 @@ public static class ProjectionBuilder<T>
     /// Returns <see cref="Expression{Func{T, object}}"/> that projects element of the source type to type that contains only specified fields.
     /// </summary>
     /// <param name="properties"> List of property names of the source type that should be projected. </param>
+    /// <param name="options"> Projection options. </param>
     /// <returns> An <see cref="Expression{Func{T, object}}"/> that projects element of the source type to type that contains only specified fields. </returns>
-    public static Expression<Func<T, object>> Build(ICollection<string> properties)
+    public static Expression<Func<T, object>> Build(ICollection<string> properties, ProjectionOptions options)
     {
         string key = GetProjectionKey(properties);
-        return Cache.GetOrAdd(key, (_) => BuildInternal(properties));
+        return Cache.GetOrAdd(key, (_) => BuildInternal(properties, options));
     }
 
-    private static Expression<Func<T, object>> BuildInternal(ICollection<string> properties)
+    private static Expression<Func<T, object>> BuildInternal(ICollection<string> properties, ProjectionOptions options)
     {
         Dictionary<string, PropertyInfo> sourceProperties = typeof(T).GetProperties()
             .Where(pi => properties.Contains(pi.Name))
             .ToDictionary(pi => pi.Name, pi => pi);
 
-        Type dynamicType = DynamicTypeBuilder.GetDynamicType(sourceProperties.ToDictionary(kv => kv.Key, kv => kv.Value.PropertyType));
+        Type dynamicType = DynamicTypeBuilder.GetOrBuildDynamicType(new()
+        {
+            Members = sourceProperties
+                .Select(kv => new DynamicTypeMember()
+                {
+                    Name = kv.Key,
+                    Type = kv.Value.PropertyType,
+                    MemberType = options.DestinationMemberType,
+                })
+                .ToList(),
+        });
 
         ParameterExpression sourceItem = Expression.Parameter(typeof(T), "x");
         IEnumerable<MemberBinding> bindings = dynamicType.GetFields()

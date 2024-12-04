@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Text;
 using System.Text.Json.Serialization;
 
 namespace EnumerableExtensions.Internal;
@@ -20,48 +21,111 @@ public static class DynamicTypeBuilder
 
     static DynamicTypeBuilder()
     {
-        ModuleBuilder = AssemblyBuilder.DefineDynamicAssembly(AssemblyName, AssemblyBuilderAccess.Run)
+        ModuleBuilder = AssemblyBuilder.DefineDynamicAssembly(AssemblyName, AssemblyBuilderAccess.RunAndCollect)
             .DefineDynamicModule(AssemblyName.Name);
     }
 
     /// <summary>
     /// Returns dynamically created <see cref="Type" /> that contains only specific fields.
     /// </summary>
-    /// <param name="fields"> List of fields that returning type should contain. </param>
-    /// <param name="baseType"> Base type of returning type. </param>
-    /// <returns> <see cref="Type" /> that contains only specified fields. </returns>
-    public static Type GetDynamicType(Dictionary<string, Type> fields, Type? baseType = null)
+    /// <param name="dynamicType"> Dynamic type specification. </param>
+    /// <returns> <see cref="Type" /> that corresponds a given specification. </returns>
+    public static Type GetOrBuildDynamicType(DynamicType dynamicType)
     {
-        ArgumentNullException.ThrowIfNull(fields);
-        ArgumentOutOfRangeException.ThrowIfZero(fields.Count);
+        // TODO
+        ArgumentNullException.ThrowIfNull(dynamicType.Members);
+        ArgumentOutOfRangeException.ThrowIfZero(dynamicType.Members.Count);
 
-        string typeKey = GetTypeKey(fields);
+        string typeKey = GetTypeKey(dynamicType);
 
-        return BuiltTypes.GetOrAdd(typeKey, (_) => BuildDynamicType(fields, baseType));
+        return BuiltTypes.GetOrAdd(typeKey, (_) => BuildDynamicType(dynamicType));
     }
 
-    private static Type BuildDynamicType(Dictionary<string, Type> fields, Type? baseType)
+    /// <summary>
+    /// Returns dynamically created <see cref="Type" /> that contains only specific fields.
+    /// </summary>
+    /// <param name="dynamicType"> Dynamic type specification. </param>
+    /// <returns> <see cref="Type" /> that corresponds a given specification. </returns>
+    public static Type BuildDynamicType(DynamicType dynamicType)
     {
-        string typeName = "DynamicLinqType" + BuiltTypes.Count.ToString();
+        /* TODO validate dynamicType */
+
+        string typeName = dynamicType.Name ?? "DynamicType" + BuiltTypes.Count.ToString();
 
         TypeBuilder typeBuilder = ModuleBuilder.DefineType(
             typeName,
             TypeAttributes.Public | TypeAttributes.Class,
-            baseType,
+            dynamicType.BaseType,
             Type.EmptyTypes);
 
-        CustomAttributeBuilder attributeBuilder = new(
-            typeof(JsonIncludeAttribute).GetConstructor(Type.EmptyTypes), []);
-
-        foreach (var (name, type) in fields)
+        foreach (DynamicTypeMember member in dynamicType.Members)
         {
-            typeBuilder.DefineField(name, type, FieldAttributes.Public)
-                .SetCustomAttribute(attributeBuilder);
+            switch (member.MemberType)
+            {
+                case DynamicTypeMemberType.Field:
+                    DefineField(typeBuilder, member.Name, member.Type);
+                    break;
+                case DynamicTypeMemberType.Property:
+                    DefineProperty(typeBuilder, member.Name, member.Type);
+                    break;
+            }
         }
 
         return typeBuilder.CreateType();
     }
 
-    private static string GetTypeKey(Dictionary<string, Type> fields)
-        => string.Join(';', fields.OrderBy(kv => kv.Key).ThenBy(kv => kv.Value.Name).Select(kv => $"{kv.Key},{kv.Value.Name}"));
+    private static void DefineProperty(TypeBuilder typeBuilder, string name, Type type)
+    {
+        FieldBuilder fieldBuilder = typeBuilder.DefineField($"_{name}", type, FieldAttributes.Private);
+        PropertyBuilder propertyBuilder = typeBuilder.DefineProperty(name, PropertyAttributes.HasDefault, type, null);
+
+        // The property set and property get methods require a special set of attributes.
+        MethodAttributes getSetAttr = MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.HideBySig;
+
+        // Define the "get" accessor method for property.
+        MethodBuilder getPropMethodBuilder = typeBuilder.DefineMethod($"get_{name}", getSetAttr, type, Type.EmptyTypes);
+
+        ILGenerator getIL = getPropMethodBuilder.GetILGenerator();
+
+        getIL.Emit(OpCodes.Ldarg_0);
+        getIL.Emit(OpCodes.Ldfld, fieldBuilder);
+        getIL.Emit(OpCodes.Ret);
+
+        // Define the "set" accessor method for property.
+        MethodBuilder setPropMethodBuilder = typeBuilder.DefineMethod($"set_{name}", getSetAttr, null, [type]);
+
+        ILGenerator setIL = setPropMethodBuilder.GetILGenerator();
+
+        setIL.Emit(OpCodes.Ldarg_0);
+        setIL.Emit(OpCodes.Ldarg_1);
+        setIL.Emit(OpCodes.Stfld, fieldBuilder);
+        setIL.Emit(OpCodes.Ret);
+
+        // Last, we must map the two methods created above to our PropertyBuilder to
+        // their corresponding behaviors, "get" and "set" respectively.
+        propertyBuilder.SetGetMethod(getPropMethodBuilder);
+        propertyBuilder.SetSetMethod(setPropMethodBuilder);
+    }
+
+    private static void DefineField(TypeBuilder typeBuilder, string name, Type type)
+    {
+        CustomAttributeBuilder attributeBuilder = new(
+            typeof(JsonIncludeAttribute).GetConstructor(Type.EmptyTypes), []);
+
+        typeBuilder.DefineField(name, type, FieldAttributes.Public)
+                .SetCustomAttribute(attributeBuilder);
+    }
+
+    private static string GetTypeKey(DynamicType options)
+    {
+        StringBuilder stringBuilder = new();
+
+        foreach (DynamicTypeMember member in options.Members.OrderBy(m => m.Name).ThenBy(m => m.Type.Name))
+        {
+            // TODO member type
+            stringBuilder.AppendFormat("{0},{1};", member.Name, member.Type.Name);
+        }
+
+        return stringBuilder.ToString();
+    }
 }
