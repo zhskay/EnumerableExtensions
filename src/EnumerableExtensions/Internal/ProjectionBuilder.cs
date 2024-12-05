@@ -24,30 +24,50 @@ public static class ProjectionBuilder<T>
         return Cache.GetOrAdd(key, (_) => BuildInternal(properties, options));
     }
 
-    private static Expression<Func<T, object>> BuildInternal(ICollection<string> properties, ProjectionOptions options)
+    private static Expression<Func<T, object>> BuildInternal(ICollection<string> memberNames, ProjectionOptions options)
     {
-        Dictionary<string, PropertyInfo> sourceProperties = typeof(T).GetProperties()
-            .Where(pi => properties.Contains(pi.Name))
+        Dictionary<string, MemberInfo> sourceMembers = typeof(T).GetMembers()
+            .Where(mi => mi.MemberType is MemberTypes.Property or MemberTypes.Field)
+            .Where(pi => memberNames.Contains(pi.Name))
             .ToDictionary(pi => pi.Name, pi => pi);
 
         Type dynamicType = DynamicTypeBuilder.GetOrBuildDynamicType(new()
         {
-            Members = sourceProperties
-                .Select(kv => new DynamicTypeMember()
-                {
-                    Name = kv.Key,
-                    Type = kv.Value.PropertyType,
-                    MemberType = options.DestinationMemberType,
-                })
-                .ToList(),
+            Members = sourceMembers.Select(kv => ToDynamicTypeMember(kv.Key, kv.Value, options)).ToList(),
         });
 
         ParameterExpression sourceItem = Expression.Parameter(typeof(T), "x");
-        IEnumerable<MemberBinding> bindings = dynamicType.GetFields()
-            .Select(p => Expression.Bind(p, Expression.Property(sourceItem, sourceProperties[p.Name])));
+
+        IEnumerable<MemberBinding> bindings = dynamicType.GetMembers()
+            .Where(mi => mi.MemberType is MemberTypes.Property or MemberTypes.Field)
+            .Select(p => Expression.Bind(p, Expression.MakeMemberAccess(sourceItem, sourceMembers[p.Name])));
 
         return Expression.Lambda<Func<T, object>>(Expression.MemberInit(Expression.New(dynamicType), bindings), sourceItem);
     }
+
+    private static DynamicTypeMember ToDynamicTypeMember(string name, MemberInfo memberInfo, ProjectionOptions options)
+        => memberInfo switch
+        {
+            FieldInfo fieldInfo => new DynamicTypeMember()
+            {
+                Name = name,
+                Type = fieldInfo.FieldType,
+                MemberType = options.MemberTypeAsSource
+                    ? DynamicTypeMemberType.Field
+                    : options.DestinationMemberType,
+            },
+
+            PropertyInfo propertyInfo => new DynamicTypeMember()
+            {
+                Name = name,
+                Type = propertyInfo.PropertyType,
+                MemberType = options.MemberTypeAsSource
+                    ? DynamicTypeMemberType.Property
+                    : options.DestinationMemberType,
+            },
+
+            _ => throw new NotImplementedException("Only fields and properties can be projected."),
+        };
 
     private static string GetProjectionKey(IEnumerable<string> properties)
         => string.Join(',', properties.OrderBy(p => p));

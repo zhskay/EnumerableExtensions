@@ -15,4 +15,15 @@ public class ProjectionOptions
     /// The default value is <see cref="DynamicTypeMemberType.Field" />.
     /// </remarks>
     public DynamicTypeMemberType DestinationMemberType { get; init; } = DynamicTypeMemberType.Field;
+
+    /// <summary>
+    /// Gets a value indicating whether the member type (field or property) in the dynamically generated class
+    /// should match the type of the corresponding member in the source type.
+    /// </summary>
+    /// <remarks>
+    /// If set to <c>true</c>, the generated class will use the same member type as the source type (e.g., fields remain fields, properties remain properties). 
+    /// If <c>false</c>, the type of members is determined by <see cref="DestinationMemberType" />.
+    /// The default value is <c>false</c>.
+    /// </remarks>
+    public bool MemberTypeAsSource { get; init; } = false;
 }
