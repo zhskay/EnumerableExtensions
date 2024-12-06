@@ -7,7 +7,7 @@ namespace EnumerableExtensions.Tests;
 [ExcludeFromCodeCoverage]
 public class DynamicTypeBuilderTests
 {
-    [Test]
+    [Fact]
     public void GetDynamicType_AllKindOfMembers_ShouldReturnDynamicType()
     {
         Type[] types = [
@@ -40,10 +40,18 @@ public class DynamicTypeBuilderTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(type.Name, Is.EqualTo("Foo"));
-            Assert.That(type.BaseType, Is.EqualTo(typeof(TestClass)));
-            Assert.That(type.GetFields(), Is.All.Matches<FieldInfo>(fi => fi.Name == $"{fi.FieldType.Name}Field" && types.Contains(fi.FieldType)));
-            Assert.That(type.GetProperties(), Is.All.Matches<PropertyInfo>(pi => pi.Name == $"{pi.PropertyType.Name}Property" && types.Contains(pi.PropertyType)));
+            Assert.Equal("Foo", type.Name);
+            Assert.Equal(typeof(TestClass), type.BaseType);
+            Assert.All(type.GetFields(), fi =>
+            {
+                Assert.Equal($"{fi.FieldType.Name}Field", fi.Name);
+                Assert.Contains(fi.FieldType, types);
+            });
+            Assert.All(type.GetProperties(), pi =>
+            {
+                Assert.Equal($"{pi.PropertyType.Name}Property", pi.Name);
+                Assert.Contains(pi.PropertyType, types);
+            });
         });
     }
 
