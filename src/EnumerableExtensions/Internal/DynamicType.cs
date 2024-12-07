@@ -19,4 +19,13 @@ public class DynamicType
     /// Gets the collection of members (fields or properties) to include in the dynamic type.
     /// </summary>
     required public ICollection<DynamicTypeMember> Members { get; init; }
+
+    /// <summary>
+    /// Validates specification.
+    /// </summary>
+    /// <param name="paramName"> The parameter name to include in the exception message, if validation fails. </param>
+    public void Validate(string paramName = "")
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(this.Members.Count, string.Join('.', paramName, nameof(this.Members)));
+    }
 }

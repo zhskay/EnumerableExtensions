@@ -32,9 +32,7 @@ public static class DynamicTypeBuilder
     /// <returns> <see cref="Type" /> that corresponds a given specification. </returns>
     public static Type GetOrBuildDynamicType(DynamicType dynamicType)
     {
-        // TODO
-        ArgumentNullException.ThrowIfNull(dynamicType.Members);
-        ArgumentOutOfRangeException.ThrowIfZero(dynamicType.Members.Count);
+        dynamicType.Validate(nameof(dynamicType));
 
         string typeKey = GetTypeKey(dynamicType);
 
@@ -48,7 +46,7 @@ public static class DynamicTypeBuilder
     /// <returns> <see cref="Type" /> that corresponds a given specification. </returns>
     public static Type BuildDynamicType(DynamicType dynamicType)
     {
-        /* TODO validate dynamicType */
+        dynamicType.Validate(nameof(dynamicType));
 
         string typeName = dynamicType.Name ?? "DynamicType" + BuiltTypes.Count.ToString();
 
