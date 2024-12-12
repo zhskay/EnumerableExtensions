@@ -14,9 +14,9 @@ public static class IQueryableExtensions
     /// <param name="source"> The source enumerable. </param>
     /// <param name="propertyNames"> List of property names of the source type that should be projected. </param>
     /// <returns> An <see cref="IQueryable{object}"/> whose elements contain only specified fields. </returns>
-    public static IQueryable<object> SelectPartially<T>(this IQueryable<T> source, ICollection<string> propertyNames)
+    public static IQueryable<object> SelectPartially<T>(this IQueryable<T> source, string select)
     {
-        return SelectPartially(source, propertyNames, new());
+        return SelectPartially(source, select, new());
     }
 
     /// <summary>
@@ -27,8 +27,8 @@ public static class IQueryableExtensions
     /// <param name="propertyNames"> List of property names of the source type that should be projected. </param>
     /// <param name="options"> Projection options. </param>
     /// <returns> An <see cref="IQueryable{object}"/> whose elements contain only specified fields. </returns>
-    public static IQueryable<object> SelectPartially<T>(this IQueryable<T> source, ICollection<string> propertyNames, ProjectionOptions options)
+    public static IQueryable<object> SelectPartially<T>(this IQueryable<T> source, string select, ProjectionOptions options)
     {
-        return source.Select(ProjectionBuilder<T>.Build(propertyNames, options));
+        return source.Select(ProjectionBuilder<T>.Build(select, options));
     }
 }

@@ -8,7 +8,7 @@ namespace EnumerableExtensions.Tests;
 public class DynamicTypeBuilderTests
 {
     [Fact]
-    public void GetDynamicType_AllKindOfMembers_ShouldReturnDynamicType()
+    public void GetDynamicType_PrimitiveMembers_ShouldReturnDynamicType()
     {
         Type[] types = [
             typeof(bool),
@@ -29,14 +29,15 @@ public class DynamicTypeBuilderTests
             typeof(string),
         ];
 
-        var type = DynamicTypeBuilder.GetOrBuildDynamicType(new DynamicType
+        var specification = new DynamicType
         {
             Name = "Foo",
             BaseType = typeof(TestClass),
-            Members = types.Select(type => new DynamicTypeMember() { Name = $"{type.Name}Field", Type = type, MemberType = DynamicTypeMemberType.Field, })
-                .Union(types.Select(type => new DynamicTypeMember() { Name = $"{type.Name}Property", Type = type, MemberType = DynamicTypeMemberType.Property, }))
+            Members = types.Select(type => new DynamicTypeMember() { Name = $"{type.Name}Field", Type = type, MemberType = MemberTypes.Field, })
+                .Union(types.Select(type => new DynamicTypeMember() { Name = $"{type.Name}Property", Type = type, MemberType = MemberTypes.Property, }))
                 .ToList(),
-        });
+        };
+        var type = DynamicTypeBuilder.GetOrCreateDynamicType(specification);
 
         Assert.Multiple(() =>
         {

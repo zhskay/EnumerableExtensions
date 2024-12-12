@@ -49,6 +49,7 @@ public static partial class SelectRecursiveParser
     /// <returns>A sorted set of <see cref="SelectItem"/> objects.</returns>
     private static SortedSet<SelectItem> ParseItems(string select, ref int index)
     {
+        int order = 0;
         var items = new SortedSet<SelectItem>(new SelectItemComparer(StringComparer.OrdinalIgnoreCase));
 
         while (index < select.Length)
@@ -60,7 +61,7 @@ public static partial class SelectRecursiveParser
                 break;
             }
 
-            SelectItem item = ParseItem(select, ref index);
+            SelectItem item = ParseItem(select, ref index, ref order);
             items.Add(item);
 
             SkipWhitespace(select, ref index);
@@ -87,7 +88,7 @@ public static partial class SelectRecursiveParser
     /// <param name="select">The select expression to parse.</param>
     /// <param name="index">The current index in the string during parsing.</param>
     /// <returns>A <see cref="SelectItem"/> representing the parsed item.</returns>
-    private static SelectItem ParseItem(string select, ref int index)
+    private static SelectItem ParseItem(string select, ref int index, ref int order)
     {
         int startIndex = index;
 
@@ -107,7 +108,7 @@ public static partial class SelectRecursiveParser
         }
 
         var name = select[startIndex..index];
-        var item = new SelectItem(name);
+        var item = new SelectItem(name, order++);
 
         if (index < select.Length && select[index] == OpenParenthesis)
         {

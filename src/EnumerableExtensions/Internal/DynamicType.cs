@@ -1,9 +1,11 @@
-﻿namespace EnumerableExtensions.Internal;
+﻿using EnumerableExtensions.Common;
+
+namespace EnumerableExtensions.Internal;
 
 /// <summary>
 /// Represents the specification used to define a dynamically generated type.
 /// </summary>
-public class DynamicType
+public class DynamicType : ValueObject
 {
     /// <summary>
     /// Gets the name of the dynamic type.
@@ -27,5 +29,17 @@ public class DynamicType
     public void Validate(string paramName = "")
     {
         ArgumentOutOfRangeException.ThrowIfZero(this.Members.Count, string.Join('.', paramName, nameof(this.Members)));
+    }
+
+    /// <inheritdoc/>
+    protected override IEnumerable<object?> GetEqualityComponents()
+    {
+        yield return this.Name;
+        yield return this.BaseType;
+
+        foreach (DynamicTypeMember member in this.Members)
+        {
+            yield return member;
+        }
     }
 }

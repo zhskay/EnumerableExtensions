@@ -49,7 +49,7 @@ public static partial class SelectParser
                         throw new InvalidSelectExpressionException(select, i);
                     }
 
-                    SelectItem newParent = new(select[previousItemStartIndex..i]);
+                    SelectItem newParent = new(select[previousItemStartIndex..i], 0);
                     stack.Push(newParent);
 
                     previousItemStartIndex = i + 1;
@@ -64,7 +64,7 @@ public static partial class SelectParser
                         }
                         else
                         {
-                            SelectItem newItem = new(select[previousItemStartIndex..i]);
+                            SelectItem newItem = new(select[previousItemStartIndex..i], parent.Items.Count);
                             parent.Items.Add(newItem);
 
                             AddItem(parent, items, stack);
@@ -81,7 +81,7 @@ public static partial class SelectParser
                 case Comma:
                     if (previousItemStartIndex != i)
                     {
-                        SelectItem newItem = new(select[previousItemStartIndex..i]);
+                        SelectItem newItem = new(select[previousItemStartIndex..i], GetItemOrder(items, stack));
                         AddItem(newItem, items, stack);
                     }
 
@@ -95,7 +95,7 @@ public static partial class SelectParser
 
         if (previousItemStartIndex != select.Length)
         {
-            SelectItem newItem = new(select[previousItemStartIndex..]);
+            SelectItem newItem = new(select[previousItemStartIndex..], GetItemOrder(items, stack));
 
             AddItem(newItem, items, stack);
         }
@@ -119,5 +119,12 @@ public static partial class SelectParser
         {
             items.Add(item);
         }
+    }
+
+    private static int GetItemOrder(SortedSet<SelectItem> items, Stack<SelectItem> stack)
+    {
+        return stack.TryPeek(out var parent)
+            ? parent.Items.Count
+            : items.Count;
     }
 }

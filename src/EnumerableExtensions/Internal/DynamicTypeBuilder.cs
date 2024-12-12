@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using EnumerableExtensions.Exceptions;
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Text;
@@ -30,13 +31,13 @@ public static class DynamicTypeBuilder
     /// </summary>
     /// <param name="dynamicType"> Dynamic type specification. </param>
     /// <returns> <see cref="Type" /> that corresponds a given specification. </returns>
-    public static Type GetOrBuildDynamicType(DynamicType dynamicType)
+    public static Type GetOrCreateDynamicType(DynamicType dynamicType)
     {
         dynamicType.Validate(nameof(dynamicType));
 
         string typeKey = GetTypeKey(dynamicType);
 
-        return BuiltTypes.GetOrAdd(typeKey, (_) => BuildDynamicType(dynamicType));
+        return BuiltTypes.GetOrAdd(typeKey, (_) => CreateDynamicType(dynamicType));
     }
 
     /// <summary>
@@ -44,11 +45,11 @@ public static class DynamicTypeBuilder
     /// </summary>
     /// <param name="dynamicType"> Dynamic type specification. </param>
     /// <returns> <see cref="Type" /> that corresponds a given specification. </returns>
-    public static Type BuildDynamicType(DynamicType dynamicType)
+    public static Type CreateDynamicType(DynamicType dynamicType)
     {
         dynamicType.Validate(nameof(dynamicType));
 
-        string typeName = dynamicType.Name ?? "DynamicType" + BuiltTypes.Count.ToString();
+        string typeName = dynamicType.Name ?? "DynamicType" + dynamicType.GetHashCode();
 
         TypeBuilder typeBuilder = ModuleBuilder.DefineType(
             typeName,
@@ -58,13 +59,15 @@ public static class DynamicTypeBuilder
 
         foreach (DynamicTypeMember member in dynamicType.Members)
         {
+            Type memberType = GetMemberType(member);
+
             switch (member.MemberType)
             {
-                case DynamicTypeMemberType.Field:
-                    DefineField(typeBuilder, member.Name, member.Type);
+                case MemberTypes.Field:
+                    DefineField(typeBuilder, member.Name, memberType);
                     break;
-                case DynamicTypeMemberType.Property:
-                    DefineProperty(typeBuilder, member.Name, member.Type);
+                case MemberTypes.Property:
+                    DefineProperty(typeBuilder, member.Name, memberType);
                     break;
             }
         }
@@ -114,14 +117,31 @@ public static class DynamicTypeBuilder
                 .SetCustomAttribute(attributeBuilder);
     }
 
-    private static string GetTypeKey(DynamicType options)
+    private static Type GetMemberType(DynamicTypeMember member)
     {
+        if (member.Type is not null)
+        {
+            return member.Type;
+        }
+
+        return member.TypeSpec is not null
+            ? CreateDynamicType(member.TypeSpec)
+            : throw new DynamicTypeBuilderException("Specify Type or TypeSpec");
+    }
+
+    private static string GetTypeKey(DynamicType? spec)
+    {
+        if (spec is null)
+        {
+            return string.Empty;
+        }
+
         StringBuilder stringBuilder = new();
 
-        foreach (DynamicTypeMember member in options.Members.OrderBy(m => m.Name).ThenBy(m => m.Type.Name))
+        foreach (DynamicTypeMember member in spec.Members.OrderBy(m => m.Name))
         {
             // TODO member type
-            stringBuilder.AppendFormat("{0},{1};", member.Name, member.Type.Name);
+            stringBuilder.AppendFormat("{0},{1};", member.Name, member.Type?.Name ?? GetTypeKey(member.TypeSpec));
         }
 
         return stringBuilder.ToString();
