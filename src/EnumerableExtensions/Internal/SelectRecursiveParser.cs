@@ -6,12 +6,12 @@ namespace EnumerableExtensions.Internal;
 /// A static class that provides functionality to recursively parse a select expression string into a collection of <see cref="SelectItem"/> objects.
 /// </summary>
 /// <remarks>
-/// This class uses recursion to handle parsing of select expressions. The expression can contain fields separated by commas, 
+/// This class uses recursion to handle parsing of select expressions. The expression can contain fields separated by commas,
 /// and support for nested items enclosed in parentheses is handled by recursive calls. The parsing algorithm processes each item
-/// by checking for commas, parentheses, and field names, ensuring that invalid characters or unexpected expressions are flagged 
+/// by checking for commas, parentheses, and field names, ensuring that invalid characters or unexpected expressions are flagged
 /// as errors. The algorithm ensures that the expression is correctly structured and throws appropriate exceptions for malformed input.
 /// </remarks>
-public static partial class SelectRecursiveParser
+public static class SelectRecursiveParser
 {
     private const char Comma = ',';
     private const char OpenParenthesis = '(';
@@ -50,16 +50,11 @@ public static partial class SelectRecursiveParser
     private static SortedSet<SelectItem> ParseItems(string select, ref int index)
     {
         int order = 0;
-        var items = new SortedSet<SelectItem>(new SelectItemComparer(StringComparer.OrdinalIgnoreCase));
+        SortedSet<SelectItem> items = new(new SelectItemComparer(StringComparer.OrdinalIgnoreCase));
 
         while (index < select.Length)
         {
             SkipWhitespace(select, ref index);
-
-            if (select[index] == CloseParenthesis)
-            {
-                break;
-            }
 
             SelectItem item = ParseItem(select, ref index, ref order);
             items.Add(item);
@@ -72,11 +67,20 @@ public static partial class SelectRecursiveParser
                 {
                     index++; // Skip the comma
                 }
-                else if (select[index] != CloseParenthesis)
+                else if (select[index] == CloseParenthesis)
+                {
+                    break;
+                }
+                else
                 {
                     throw new InvalidSelectExpressionException(select, index, "Unexpected character after item.");
                 }
             }
+        }
+
+        if (items.Count == 0)
+        {
+            throw new InvalidSelectExpressionException(select, index, "No items found.");
         }
 
         return items;
@@ -107,14 +111,18 @@ public static partial class SelectRecursiveParser
             throw new InvalidSelectExpressionException(select, index, "Expected a field name.");
         }
 
-        var name = select[startIndex..index];
-        var item = new SelectItem(name, order++);
+        if (char.IsDigit(select[startIndex]))
+        {
+            throw new InvalidSelectExpressionException(select, index, "Field name can't starts with a digit.");
+        }
+
+        string name = select[startIndex..index];
 
         if (index < select.Length && select[index] == OpenParenthesis)
         {
             index++; // Skip the '('
 
-            item.Items = ParseItems(select, ref index);
+            SortedSet<SelectItem> innerItems = ParseItems(select, ref index);
 
             if (index >= select.Length || select[index] != CloseParenthesis)
             {
@@ -122,15 +130,11 @@ public static partial class SelectRecursiveParser
             }
 
             index++; // Skip the ')'
+
+            return new SelectItem(name, order++, innerItems);
         }
 
-        // After a parenthesis, ensure only a comma or end-of-string is allowed
-        if (index < select.Length && select[index] != Comma && select[index] != CloseParenthesis)
-        {
-            throw new InvalidSelectExpressionException(select, index, "Unexpected character after parenthesized group.");
-        }
-
-        return item;
+        return new SelectItem(name, order++);
     }
 
     /// <summary>

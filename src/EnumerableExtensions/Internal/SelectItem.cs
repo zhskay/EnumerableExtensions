@@ -36,17 +36,17 @@ public class SelectItem
     }
 
     /// <summary>
-    /// Gets or sets the name of the select item.
+    /// Gets the name of the select item.
     /// </summary>
-    public string Name { get; set; }
+    public string Name { get; init; }
 
     /// <summary>
-    /// Gets or sets the collection of nested <see cref="SelectItem"/> objects within this item.
+    /// Gets the order of the select item within its hierarchy.
     /// </summary>
-    public SortedSet<SelectItem> Items { get; set; }
+    public int Order { get; init; }
 
     /// <summary>
-    /// Gets or sets the order of the select item within its hierarchy.
+    /// Gets the collection of nested <see cref="SelectItem"/> objects within this item.
     /// </summary>
-    public int Order { get; set; }
+    public SortedSet<SelectItem> Items { get; init; }
 }
