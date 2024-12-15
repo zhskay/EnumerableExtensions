@@ -1,4 +1,6 @@
-﻿using System.Collections.Concurrent;
+﻿using EnumerableExtensions.Exceptions;
+using EnumerableExtensions.Parsing;
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 
@@ -15,60 +17,139 @@ public static class ProjectionBuilder<T>
     /// <summary>
     /// Returns <see cref="Expression{Func{T, object}}"/> that projects element of the source type to type that contains only specified fields.
     /// </summary>
-    /// <param name="properties"> List of property names of the source type that should be projected. </param>
+    /// <param name="select"> The select expression defining the fields to include in the projection. </param>
     /// <param name="options"> Projection options. </param>
     /// <returns> An <see cref="Expression{Func{T, object}}"/> that projects element of the source type to type that contains only specified fields. </returns>
-    public static Expression<Func<T, object>> Build(ICollection<string> properties, ProjectionOptions options)
+    public static Expression<Func<T, object>> Build(string select, ProjectionOptions options)
     {
-        string key = GetProjectionKey(properties);
-        return Cache.GetOrAdd(key, (_) => BuildInternal(properties, options));
+        SortedSet<SelectItem> items = SelectRecursiveParser.ParseSelect(select);
+
+        string key = GetProjectionKey(items);
+
+        return Cache.GetOrAdd(key, (_) => BuildInternal(items, options));
     }
 
-    private static Expression<Func<T, object>> BuildInternal(ICollection<string> memberNames, ProjectionOptions options)
+    private static Expression<Func<T, object>> BuildInternal(SortedSet<SelectItem> selectItems, ProjectionOptions options)
     {
-        Dictionary<string, MemberInfo> sourceMembers = typeof(T).GetMembers()
-            .Where(mi => mi.MemberType is MemberTypes.Property or MemberTypes.Field)
-            .Where(pi => memberNames.Contains(pi.Name))
-            .ToDictionary(pi => pi.Name, pi => pi);
+        Projection[] projections = CreateProjections(typeof(T), selectItems, options);
 
-        Type dynamicType = DynamicTypeBuilder.GetOrBuildDynamicType(new()
-        {
-            Members = sourceMembers.Select(kv => ToDynamicTypeMember(kv.Key, kv.Value, options)).ToList(),
-        });
+        TypeSpec spec = new() { Members = projections.Select(CreateMemberSpec).ToArray() };
+        Type dynamicType = DynamicTypeBuilder.GetOrCreateDynamicType(spec);
 
         ParameterExpression sourceItem = Expression.Parameter(typeof(T), "x");
 
-        IEnumerable<MemberBinding> bindings = dynamicType.GetMembers()
-            .Where(mi => mi.MemberType is MemberTypes.Property or MemberTypes.Field)
-            .Select(p => Expression.Bind(p, Expression.MakeMemberAccess(sourceItem, sourceMembers[p.Name])));
-
-        return Expression.Lambda<Func<T, object>>(Expression.MemberInit(Expression.New(dynamicType), bindings), sourceItem);
+        // x => new Destination
+        // {
+        //     ValueType = x.ValueType,
+        //     Object = x.Class,
+        //     PartialObject = new PartialObject
+        //     {
+        //         ValueType = x.PartialObject.ValueType,
+        //         ...
+        //     },
+        // }
+        return Expression.Lambda<Func<T, object>>(CreateObjectProjection(dynamicType, projections, sourceItem), sourceItem);
     }
 
-    private static DynamicTypeMember ToDynamicTypeMember(string name, MemberInfo memberInfo, ProjectionOptions options)
-        => memberInfo switch
+    private static MemberInitExpression CreateObjectProjection(Type type, ICollection<Projection> projections, Expression parameterExpression)
+    {
+        MemberInfo[] destMembers = type.GetMembers()
+            .Where(mi => mi.MemberType is MemberTypes.Property or MemberTypes.Field)
+            .ToArray();
+
+        IEnumerable<MemberBinding> bindings = projections
+            .Select(projection =>
+            {
+                MemberInfo destMember = destMembers.FirstOrDefault(mi => mi.Name == projection.SourceMember.Name)
+                    ?? throw new Exception($"Destination type does not have member {projection.SourceMember.Name} for project to.");
+
+                return GetUnderlyingType(destMember) switch
+                {
+                    Type classType when classType.IsClass && projection.InnerProjections is not null
+                        => Expression.Bind(
+                            destMember,
+                            Expression.Condition(
+                                Expression.Equal(Expression.MakeMemberAccess(parameterExpression, projection.SourceMember), Expression.Constant(null)),
+                                Expression.Constant(null, classType),
+                                CreateObjectProjection(classType, projection.InnerProjections, Expression.MakeMemberAccess(parameterExpression, projection.SourceMember)))),
+
+                    _ => Expression.Bind(destMember, Expression.MakeMemberAccess(parameterExpression, projection.SourceMember)),
+                };
+            });
+
+        return Expression.MemberInit(Expression.New(type), bindings);
+    }
+
+    private static Projection[] CreateProjections(Type type, IEnumerable<SelectItem> selectItems, ProjectionOptions options)
+    {
+        MemberInfo[] members = type.GetMembers(BindingFlags.Public | BindingFlags.Instance)
+            .Where(mi => mi.MemberType is MemberTypes.Property or MemberTypes.Field)
+            .ToArray();
+
+        return selectItems.OrderBy(x => x.Order).Select(select =>
         {
-            FieldInfo fieldInfo => new DynamicTypeMember()
-            {
-                Name = name,
-                Type = fieldInfo.FieldType,
-                MemberType = options.MemberTypeAsSource
-                    ? DynamicTypeMemberType.Field
-                    : options.DestinationMemberType,
-            },
+            MemberInfo member = members.FirstOrDefault(mi => string.Equals(mi.Name, select.Name, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidSelectItemException(select, type);
+            Type memberType = GetUnderlyingType(member);
 
-            PropertyInfo propertyInfo => new DynamicTypeMember()
-            {
-                Name = name,
-                Type = propertyInfo.PropertyType,
-                MemberType = options.MemberTypeAsSource
-                    ? DynamicTypeMemberType.Property
-                    : options.DestinationMemberType,
-            },
+            ICollection<Projection>? innerProjections = select.Items.Count > 0
+                ? CreateProjections(memberType, select.Items, options)
+                : null;
 
+            return new Projection
+            {
+                MemberType = options.MemberType,
+                SourceMember = member,
+                InnerProjections = innerProjections,
+            };
+        }).ToArray();
+    }
+
+    private static MemberSpec CreateMemberSpec(Projection projection)
+    {
+        return new MemberSpec
+        {
+            Name = projection.SourceMember.Name,
+            Type = projection.InnerProjections is null
+                ? GetUnderlyingType(projection.SourceMember)
+                : null,
+            MemberType = GetMemberType(projection),
+            TypeSpec = projection.InnerProjections is not null
+                ? new TypeSpec { Members = projection.InnerProjections.Select(CreateMemberSpec).ToArray() }
+                : null,
+        };
+    }
+
+    private static Type GetUnderlyingType(MemberInfo member)
+        => member switch
+        {
+            FieldInfo fieldInfo => fieldInfo.FieldType,
+            PropertyInfo propertyInfo => propertyInfo.PropertyType,
             _ => throw new NotImplementedException("Only fields and properties can be projected."),
         };
 
-    private static string GetProjectionKey(IEnumerable<string> properties)
-        => string.Join(',', properties.OrderBy(p => p));
+    private static MemberTypes GetMemberType(Projection projection)
+        => projection.MemberType switch
+        {
+            ProjectionType.Field => MemberTypes.Field,
+            ProjectionType.Property => MemberTypes.Property,
+            _ => projection.SourceMember switch
+            {
+                FieldInfo => MemberTypes.Field,
+                PropertyInfo => MemberTypes.Property,
+                _ => throw new NotImplementedException("Only fields and properties can be projected."),
+            },
+        };
+
+    private static string GetProjectionKey(SortedSet<SelectItem> items)
+        => string.Join(',', items.Select(x => x.Items.Count == 0 ? x.Name : $"{x.Name}({GetProjectionKey(x.Items)})"));
+
+    private class Projection
+    {
+        required public MemberInfo SourceMember { get; init; }
+
+        required public ProjectionType MemberType { get; init; }
+
+        required public ICollection<Projection>? InnerProjections { get; init; }
+    }
 }
