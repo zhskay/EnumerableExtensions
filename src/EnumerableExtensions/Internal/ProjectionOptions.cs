@@ -1,4 +1,4 @@
-﻿namespace EnumerableExtensions;
+﻿namespace EnumerableExtensions.Internal;
 
 /// <summary>
 /// Represents options used to configure the behavior of the <c>SelectPartially</c> method.
@@ -10,7 +10,7 @@ public class ProjectionOptions
     /// </summary>
     /// <remarks>
     /// This specifies whether the dynamically generated class will have fields or properties for its members.
-    /// The default value is <see cref="ProjectMemberType.Field" />.
+    /// The default value is <see cref="ProjectionType.Field" />.
     /// </remarks>
-    public ProjectMemberType MemberType { get; init; } = ProjectMemberType.Field;
+    public ProjectionType MemberType { get; init; } = ProjectionType.Field;
 }

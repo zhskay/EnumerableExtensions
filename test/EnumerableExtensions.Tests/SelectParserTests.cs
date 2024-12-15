@@ -1,5 +1,5 @@
 ﻿using EnumerableExtensions.Exceptions;
-using EnumerableExtensions.Internal;
+using EnumerableExtensions.Parsing;
 using System.Diagnostics.CodeAnalysis;
 
 namespace EnumerableExtensions.Tests;

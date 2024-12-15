@@ -1,4 +1,4 @@
-﻿using EnumerableExtensions.Internal;
+﻿using EnumerableExtensions.Parsing;
 
 namespace EnumerableExtensions.Exceptions;
 

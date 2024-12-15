@@ -1,6 +1,7 @@
 ﻿using EnumerableExtensions.Exceptions;
+using EnumerableExtensions.Internal;
 
-namespace EnumerableExtensions.Internal;
+namespace EnumerableExtensions.Parsing;
 
 /// <summary>
 /// A static class that provides functionality to parse a select expression string into a collection of <see cref="SelectItem"/> objects.

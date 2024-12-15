@@ -8,7 +8,7 @@ using System.Text.Json.Serialization;
 namespace EnumerableExtensions.Internal;
 
 /// <summary>
-/// Generates <see cref="Type" /> from input parameters.
+/// Provides functionality for creating dynamically generated types based on specifications.
 /// </summary>
 /// <remarks>
 /// Thanks to Ethan J.Brown: http://stackoverflow.com/questions/606104/how-to-create-linq-expression-tree-with-anonymous-type-in-it/723018#723018.
@@ -27,47 +27,43 @@ public static class DynamicTypeBuilder
     }
 
     /// <summary>
-    /// Returns dynamically created <see cref="Type" /> that contains only specific fields.
+    /// Returns dynamically created <see cref="Type" /> based on the specification.
     /// </summary>
-    /// <param name="dynamicType"> Dynamic type specification. </param>
-    /// <returns> <see cref="Type" /> that corresponds a given specification. </returns>
-    public static Type GetOrCreateDynamicType(DynamicType dynamicType)
+    /// <param name="typeSpec">The specification for the dynamic type.</param>
+    /// <returns>A <see cref="Type" /> that corresponds to the given specification.</returns>
+    public static Type GetOrCreateDynamicType(TypeSpec typeSpec)
     {
-        dynamicType.Validate(nameof(dynamicType));
+        string typeKey = GetTypeKey(typeSpec);
 
-        string typeKey = GetTypeKey(dynamicType);
-
-        return BuiltTypes.GetOrAdd(typeKey, (_) => CreateDynamicType(dynamicType));
+        return BuiltTypes.GetOrAdd(typeKey, (_) => CreateDynamicType(typeSpec));
     }
 
     /// <summary>
-    /// Returns dynamically created <see cref="Type" /> that contains only specific fields.
+    /// Creates a new dynamically generated <see cref="Type" /> based on the specification.
     /// </summary>
-    /// <param name="dynamicType"> Dynamic type specification. </param>
-    /// <returns> <see cref="Type" /> that corresponds a given specification. </returns>
-    public static Type CreateDynamicType(DynamicType dynamicType)
+    /// <param name="typeSpec">The specification for the dynamic type.</param>
+    /// <returns>A <see cref="Type" /> that corresponds to the given specification.</returns>
+    public static Type CreateDynamicType(TypeSpec typeSpec)
     {
-        dynamicType.Validate(nameof(dynamicType));
-
-        string typeName = dynamicType.Name ?? "DynamicType" + dynamicType.GetHashCode();
+        string typeName = typeSpec.Name ?? "DynamicType" + typeSpec.GetHashCode();
 
         TypeBuilder typeBuilder = ModuleBuilder.DefineType(
             typeName,
             TypeAttributes.Public | TypeAttributes.Class,
-            dynamicType.BaseType,
+            typeSpec.BaseType,
             Type.EmptyTypes);
 
-        foreach (DynamicTypeMember member in dynamicType.Members)
+        foreach (MemberSpec memberSpec in typeSpec.Members)
         {
-            Type memberType = GetMemberType(member);
+            Type memberType = GetMemberType(memberSpec);
 
-            switch (member.MemberType)
+            switch (memberSpec.MemberType)
             {
                 case MemberTypes.Field:
-                    DefineField(typeBuilder, member.Name, memberType);
+                    DefineField(typeBuilder, memberSpec.Name, memberType);
                     break;
                 case MemberTypes.Property:
-                    DefineProperty(typeBuilder, member.Name, memberType);
+                    DefineProperty(typeBuilder, memberSpec.Name, memberType);
                     break;
             }
         }
@@ -93,7 +89,7 @@ public static class DynamicTypeBuilder
         getIL.Emit(OpCodes.Ret);
 
         // Define the "set" accessor method for property.
-        MethodBuilder setPropMethodBuilder = typeBuilder.DefineMethod($"set_{name}", getSetAttr, null, [type]);
+        MethodBuilder setPropMethodBuilder = typeBuilder.DefineMethod($"set_{name}", getSetAttr, null, new[] { type });
 
         ILGenerator setIL = setPropMethodBuilder.GetILGenerator();
 
@@ -111,13 +107,13 @@ public static class DynamicTypeBuilder
     private static void DefineField(TypeBuilder typeBuilder, string name, Type type)
     {
         CustomAttributeBuilder attributeBuilder = new(
-            typeof(JsonIncludeAttribute).GetConstructor(Type.EmptyTypes), []);
+            typeof(JsonIncludeAttribute).GetConstructor(Type.EmptyTypes), Array.Empty<object>());
 
         typeBuilder.DefineField(name, type, FieldAttributes.Public)
                 .SetCustomAttribute(attributeBuilder);
     }
 
-    private static Type GetMemberType(DynamicTypeMember member)
+    private static Type GetMemberType(MemberSpec member)
     {
         if (member.Type is not null)
         {
@@ -129,7 +125,7 @@ public static class DynamicTypeBuilder
             : throw new DynamicTypeBuilderException("Specify Type or TypeSpec");
     }
 
-    private static string GetTypeKey(DynamicType? spec)
+    private static string GetTypeKey(TypeSpec? spec)
     {
         if (spec is null)
         {
@@ -138,9 +134,8 @@ public static class DynamicTypeBuilder
 
         StringBuilder stringBuilder = new();
 
-        foreach (DynamicTypeMember member in spec.Members.OrderBy(m => m.Name))
+        foreach (MemberSpec member in spec.Members.OrderBy(m => m.Name))
         {
-            // TODO member type
             stringBuilder.AppendFormat("{0},{1};", member.Name, member.Type?.Name ?? GetTypeKey(member.TypeSpec));
         }
 

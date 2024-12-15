@@ -1,4 +1,5 @@
 ﻿using EnumerableExtensions.Exceptions;
+using EnumerableExtensions.Parsing;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -32,7 +33,7 @@ public static class ProjectionBuilder<T>
     {
         Projection[] projections = CreateProjections(typeof(T), selectItems, options);
 
-        DynamicType spec = new() { Members = projections.Select(CreateDynamicTypeSpec).ToArray() };
+        TypeSpec spec = new() { Members = projections.Select(CreateMemberSpec).ToArray() };
         Type dynamicType = DynamicTypeBuilder.GetOrCreateDynamicType(spec);
 
         ParameterExpression sourceItem = Expression.Parameter(typeof(T), "x");
@@ -65,7 +66,12 @@ public static class ProjectionBuilder<T>
                 return GetUnderlyingType(destMember) switch
                 {
                     Type classType when classType.IsClass && projection.InnerProjections is not null
-                        => Expression.Bind(destMember, CreateObjectProjection(classType, projection.InnerProjections, Expression.MakeMemberAccess(parameterExpression, projection.SourceMember))),
+                        => Expression.Bind(
+                            destMember,
+                            Expression.Condition(
+                                Expression.Equal(Expression.MakeMemberAccess(parameterExpression, projection.SourceMember), Expression.Constant(null)),
+                                Expression.Constant(null, classType),
+                                CreateObjectProjection(classType, projection.InnerProjections, Expression.MakeMemberAccess(parameterExpression, projection.SourceMember)))),
 
                     _ => Expression.Bind(destMember, Expression.MakeMemberAccess(parameterExpression, projection.SourceMember)),
                 };
@@ -99,9 +105,9 @@ public static class ProjectionBuilder<T>
         }).ToArray();
     }
 
-    private static DynamicTypeMember CreateDynamicTypeSpec(Projection projection)
+    private static MemberSpec CreateMemberSpec(Projection projection)
     {
-        return new DynamicTypeMember
+        return new MemberSpec
         {
             Name = projection.SourceMember.Name,
             Type = projection.InnerProjections is null
@@ -109,7 +115,7 @@ public static class ProjectionBuilder<T>
                 : null,
             MemberType = GetMemberType(projection),
             TypeSpec = projection.InnerProjections is not null
-                ? new DynamicType { Members = projection.InnerProjections.Select(CreateDynamicTypeSpec).ToArray() }
+                ? new TypeSpec { Members = projection.InnerProjections.Select(CreateMemberSpec).ToArray() }
                 : null,
         };
     }
@@ -125,8 +131,8 @@ public static class ProjectionBuilder<T>
     private static MemberTypes GetMemberType(Projection projection)
         => projection.MemberType switch
         {
-            ProjectMemberType.Field => MemberTypes.Field,
-            ProjectMemberType.Property => MemberTypes.Property,
+            ProjectionType.Field => MemberTypes.Field,
+            ProjectionType.Property => MemberTypes.Property,
             _ => projection.SourceMember switch
             {
                 FieldInfo => MemberTypes.Field,
@@ -142,7 +148,7 @@ public static class ProjectionBuilder<T>
     {
         required public MemberInfo SourceMember { get; init; }
 
-        required public ProjectMemberType MemberType { get; init; }
+        required public ProjectionType MemberType { get; init; }
 
         required public ICollection<Projection>? InnerProjections { get; init; }
     }

@@ -8,7 +8,7 @@ namespace EnumerableExtensions.Tests;
 public class DynamicTypeBuilderTests
 {
     [Fact]
-    public void GetDynamicType_PrimitiveMembers_ShouldReturnDynamicType()
+    public void GetOrCreateDynamicType_TypeWithPrimitiveMembers_ShouldReturnDynamicType()
     {
         Type[] types = [
             typeof(bool),
@@ -29,12 +29,12 @@ public class DynamicTypeBuilderTests
             typeof(string),
         ];
 
-        var specification = new DynamicType
+        var specification = new TypeSpec
         {
             Name = "Foo",
             BaseType = typeof(TestClass),
-            Members = types.Select(type => new DynamicTypeMember() { Name = $"{type.Name}Field", Type = type, MemberType = MemberTypes.Field, })
-                .Union(types.Select(type => new DynamicTypeMember() { Name = $"{type.Name}Property", Type = type, MemberType = MemberTypes.Property, }))
+            Members = types.Select(type => new MemberSpec() { Name = $"{type.Name}Field", Type = type, MemberType = MemberTypes.Field, })
+                .Union(types.Select(type => new MemberSpec() { Name = $"{type.Name}Property", Type = type, MemberType = MemberTypes.Property, }))
                 .ToList(),
         };
         var type = DynamicTypeBuilder.GetOrCreateDynamicType(specification);
@@ -53,6 +53,60 @@ public class DynamicTypeBuilderTests
                 Assert.Equal($"{pi.PropertyType.Name}Property", pi.Name);
                 Assert.Contains(pi.PropertyType, types);
             });
+        });
+    }
+
+    [Fact]
+    public void GetOrCreateDynamicType_TypeWithInnerType_ShouldReturnDynamicType()
+    {
+        var specification = new TypeSpec
+        {
+            Name = "Bar",
+            BaseType = typeof(TestClass),
+            Members =
+            [
+                new MemberSpec
+                {
+                    Name = "InnerObject",
+                    MemberType = MemberTypes.Property,
+                    TypeSpec = new TypeSpec
+                    {
+                        Name = "InnerType",
+                        Members =
+                        [
+                            new MemberSpec
+                            {
+                                Name = "DeeplyInnerObject",
+                                MemberType = MemberTypes.Property,
+                                TypeSpec = new TypeSpec
+                                {
+                                    Name = "DeeplyInnerType",
+                                    Members = [new MemberSpec { Name = "String", MemberType = MemberTypes.Property, Type = typeof(string) }],
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        };
+        var type = DynamicTypeBuilder.GetOrCreateDynamicType(specification);
+
+        Assert.Multiple(() =>
+        {
+            Assert.Equal("Bar", type.Name);
+            Assert.Equal(typeof(TestClass), type.BaseType);
+
+            PropertyInfo? innerProperty = type.GetProperty("InnerObject");
+
+            Assert.NotNull(innerProperty);
+            Assert.Equal("InnerObject", innerProperty?.Name);
+            Assert.Equal("InnerType", innerProperty?.PropertyType.Name);
+
+            PropertyInfo? deelpyInnerProperty = innerProperty?.PropertyType?.GetProperty("DeeplyInnerObject");
+
+            Assert.NotNull(deelpyInnerProperty);
+            Assert.Equal("DeeplyInnerObject", deelpyInnerProperty?.Name);
+            Assert.Equal("DeeplyInnerType", deelpyInnerProperty?.PropertyType.Name);
         });
     }
 

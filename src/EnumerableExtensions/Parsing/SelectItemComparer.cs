@@ -1,4 +1,4 @@
-﻿namespace EnumerableExtensions.Internal;
+﻿namespace EnumerableExtensions.Parsing;
 
 /// <summary>
 /// Provides a comparer for <see cref="SelectItem"/> objects based on their names.

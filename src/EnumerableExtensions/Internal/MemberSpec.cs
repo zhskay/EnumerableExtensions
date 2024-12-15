@@ -6,7 +6,7 @@ namespace EnumerableExtensions.Internal;
 /// <summary>
 /// Represents the specification for a member (field or property) of a dynamically generated type.
 /// </summary>
-public class DynamicTypeMember : ValueObject
+public class MemberSpec : ValueObject
 {
     /// <summary>
     /// Gets the name of the member.
@@ -16,17 +16,17 @@ public class DynamicTypeMember : ValueObject
     /// <summary>
     /// Gets the member type, indicating whether it is a field or property.
     /// </summary>
-    public MemberTypes MemberType { get; init; }
+    required public MemberTypes MemberType { get; init; }
 
     /// <summary>
-    /// Gets the type of the member.
+    /// Gets the data type of the member.
     /// </summary>
     public Type? Type { get; init; }
 
     /// <summary>
-    /// Gets the dynamic type specification.
+    /// Gets the nested type specification, if the member is of a complex type.
     /// </summary>
-    public DynamicType? TypeSpec { get; init; }
+    public TypeSpec? TypeSpec { get; init; }
 
     /// <inheritdoc/>
     protected override IEnumerable<object?> GetEqualityComponents()

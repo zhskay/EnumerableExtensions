@@ -1,6 +1,6 @@
 ﻿using EnumerableExtensions.Exceptions;
 
-namespace EnumerableExtensions.Internal;
+namespace EnumerableExtensions.Parsing;
 
 /// <summary>
 /// A static class that provides functionality to recursively parse a select expression string into a collection of <see cref="SelectItem"/> objects.

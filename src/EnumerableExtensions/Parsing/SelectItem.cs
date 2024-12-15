@@ -1,4 +1,6 @@
-﻿namespace EnumerableExtensions.Internal;
+﻿using EnumerableExtensions.Internal;
+
+namespace EnumerableExtensions.Parsing;
 
 /// <summary>
 /// Represents an item in a hierarchical structure parsed from a select expression.
