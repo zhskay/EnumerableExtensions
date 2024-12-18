@@ -3,6 +3,7 @@ using EnumerableExtensions.Parsing;
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace EnumerableExtensions.Internal;
 
@@ -42,11 +43,12 @@ public static class ProjectionBuilder<T>
         // {
         //     ValueType = x.ValueType,
         //     Object = x.Class,
-        //     PartialObject = new PartialObject
+        //     PartialObject = new DestPartialObject
         //     {
         //         ValueType = x.PartialObject.ValueType,
         //         ...
         //     },
+        //     Array = x.Array.Select(item => new DestItem { ValueType = item.ValueType, ... })
         // }
         return Expression.Lambda<Func<T, object>>(CreateObjectProjection(dynamicType, projections, sourceItem), sourceItem);
     }
@@ -63,25 +65,66 @@ public static class ProjectionBuilder<T>
                 MemberInfo destMember = destMembers.FirstOrDefault(mi => mi.Name == projection.SourceMember.Name)
                     ?? throw new Exception($"Destination type does not have member {projection.SourceMember.Name} for project to.");
 
+                MemberExpression sourceMemberExpression = Expression.MakeMemberAccess(parameterExpression, projection.SourceMember);
+
+                if (projection.InnerProjections is null or { Count: 0 })
+                {
+                    return Expression.Bind(destMember, sourceMemberExpression);
+                }
+
                 return GetUnderlyingType(destMember) switch
                 {
-                    Type classType when classType.IsClass && projection.InnerProjections is not null
+                    Type arrayType when arrayType.IsArray
                         => Expression.Bind(
                             destMember,
                             Expression.Condition(
-                                Expression.Equal(Expression.MakeMemberAccess(parameterExpression, projection.SourceMember), Expression.Constant(null)),
-                                Expression.Constant(null, classType),
-                                CreateObjectProjection(classType, projection.InnerProjections, Expression.MakeMemberAccess(parameterExpression, projection.SourceMember)))),
+                                Expression.Equal(sourceMemberExpression, Expression.Constant(null)),
+                                Expression.Constant(null, arrayType),
+                                CreateArrayProjection(arrayType, projection.InnerProjections, sourceMemberExpression))),
 
-                    _ => Expression.Bind(destMember, Expression.MakeMemberAccess(parameterExpression, projection.SourceMember)),
+                    Type classType when classType.IsClass
+                        => Expression.Bind(
+                            destMember,
+                            Expression.Condition(
+                                Expression.Equal(sourceMemberExpression, Expression.Constant(null)),
+                                Expression.Constant(null, classType),
+                                CreateObjectProjection(classType, projection.InnerProjections, sourceMemberExpression))),
+
+                    _ => Expression.Bind(destMember, sourceMemberExpression),
                 };
             });
 
         return Expression.MemberInit(Expression.New(type), bindings);
     }
 
+    private static MethodCallExpression CreateArrayProjection(Type arrayType, ICollection<Projection> projections, Expression parameterExpression)
+    {
+        if (arrayType.GetElementType() is not Type destType || parameterExpression.Type.GetElementType() is not Type sourceType)
+        {
+            throw new InvalidOperationException();
+        }
+
+        ParameterExpression item = Expression.Parameter(sourceType, "item");
+
+        MethodCallExpression expression = Expression.Call(
+            null,
+            Helper.SelectMethodInfo.MakeGenericMethod(sourceType, destType),
+            parameterExpression,
+            Expression.Lambda(CreateObjectProjection(destType, projections, item), item));
+
+        return Expression.Call(
+            null,
+            Helper.ToArray.MakeGenericMethod(destType),
+            expression);
+    }
+
     private static Projection[] CreateProjections(Type type, IEnumerable<SelectItem> selectItems, ProjectionOptions options)
     {
+        if (type.IsArray && type.GetElementType() is Type elementType)
+        {
+            type = elementType;
+        }
+
         MemberInfo[] members = type.GetMembers(BindingFlags.Public | BindingFlags.Instance)
             .Where(mi => mi.MemberType is MemberTypes.Property or MemberTypes.Field)
             .ToArray();
@@ -107,13 +150,16 @@ public static class ProjectionBuilder<T>
 
     private static MemberSpec CreateMemberSpec(Projection projection)
     {
+        Type sourceMemberType = GetUnderlyingType(projection.SourceMember);
+
         return new MemberSpec
         {
             Name = projection.SourceMember.Name,
-            Type = projection.InnerProjections is null
-                ? GetUnderlyingType(projection.SourceMember)
-                : null,
             MemberType = GetMemberType(projection),
+            IsArray = sourceMemberType.IsArray,
+            Type = projection.InnerProjections is null
+                ? sourceMemberType.IsArray ? sourceMemberType.GetElementType() : sourceMemberType
+                : null,
             TypeSpec = projection.InnerProjections is not null
                 ? new TypeSpec { Members = projection.InnerProjections.Select(CreateMemberSpec).ToArray() }
                 : null,
@@ -144,6 +190,9 @@ public static class ProjectionBuilder<T>
     private static string GetProjectionKey(SortedSet<SelectItem> items)
         => string.Join(',', items.Select(x => x.Items.Count == 0 ? x.Name : $"{x.Name}({GetProjectionKey(x.Items)})"));
 
+    [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = nameof(Enumerable.Select))]
+    private static extern IEnumerable<TResult> SelectMethod<TSource, TResult>(IEnumerable<TSource> source, Func<TSource, TResult> selector);
+
     private class Projection
     {
         required public MemberInfo SourceMember { get; init; }
@@ -151,5 +200,23 @@ public static class ProjectionBuilder<T>
         required public ProjectionType MemberType { get; init; }
 
         required public ICollection<Projection>? InnerProjections { get; init; }
+    }
+
+    private static class Helper
+    {
+        static Helper()
+        {
+            ToArray = typeof(Enumerable).GetMethod(nameof(Enumerable.ToArray));
+
+            SelectMethodInfo = typeof(Enumerable).GetMethods()
+                .FirstOrDefault(m =>
+                    m.Name == nameof(Enumerable.Select)
+                    && m.GetParameters().All(p => p.ParameterType.IsGenericType)
+                    && m.GetParameters().Select(p => p.ParameterType.GetGenericTypeDefinition()).SequenceEqual([typeof(IEnumerable<>), typeof(Func<,>)]));
+        }
+
+        public static MethodInfo SelectMethodInfo { get; }
+
+        public static MethodInfo ToArray { get; }
     }
 }
