@@ -18,6 +18,8 @@ public class MemberSpec : ValueObject
     /// </summary>
     required public MemberTypes MemberType { get; init; }
 
+    public bool IsArray { get; init; } = false;
+
     /// <summary>
     /// Gets the data type of the member.
     /// </summary>
