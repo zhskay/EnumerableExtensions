@@ -115,14 +115,15 @@ public static class DynamicTypeBuilder
 
     private static Type GetMemberType(MemberSpec member)
     {
-        if (member.Type is not null)
-        {
-            return member.Type;
-        }
+        Type type = member.Type is not null
+            ? member.Type
+            : member.TypeSpec is not null
+                ? GetOrCreateDynamicType(member.TypeSpec)
+                : throw new DynamicTypeBuilderException("Specify Type or TypeSpec");
 
-        return member.TypeSpec is not null
-            ? CreateDynamicType(member.TypeSpec)
-            : throw new DynamicTypeBuilderException("Specify Type or TypeSpec");
+        return member.IsEnumerable
+            ? typeof(IEnumerable<>).MakeGenericType(type)
+            : type;
     }
 
     private static string GetTypeKey(TypeSpec? spec)

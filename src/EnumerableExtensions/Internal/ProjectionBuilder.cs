@@ -36,52 +36,95 @@ public static class ProjectionBuilder<T>
         TypeSpec spec = new() { Members = projections.Select(CreateMemberSpec).ToArray() };
         Type dynamicType = DynamicTypeBuilder.GetOrCreateDynamicType(spec);
 
-        ParameterExpression sourceItem = Expression.Parameter(typeof(T), "x");
+        ParameterExpression sourceElement = Expression.Parameter(typeof(T), "x");
 
         // x => new Destination
         // {
         //     ValueType = x.ValueType,
         //     Object = x.Class,
-        //     PartialObject = new PartialObject
+        //     PartialObject = new DestPartialObject
         //     {
         //         ValueType = x.PartialObject.ValueType,
         //         ...
         //     },
+        //     Array = x.Array.Select(item => new DestItem { ValueType = item.ValueType, ... })
         // }
-        return Expression.Lambda<Func<T, object>>(CreateObjectProjection(dynamicType, projections, sourceItem), sourceItem);
+        return Expression.Lambda<Func<T, object>>(CreateObjectProjection(sourceElement, dynamicType, projections), sourceElement);
     }
 
-    private static MemberInitExpression CreateObjectProjection(Type type, ICollection<Projection> projections, Expression parameterExpression)
+    private static MemberInitExpression CreateObjectProjection(Expression source, Type destType, ICollection<Projection> projections)
     {
-        MemberInfo[] destMembers = type.GetMembers()
+        MemberInfo[] destMembers = destType.GetMembers()
             .Where(mi => mi.MemberType is MemberTypes.Property or MemberTypes.Field)
             .ToArray();
 
         IEnumerable<MemberBinding> bindings = projections
             .Select(projection =>
             {
-                MemberInfo destMember = destMembers.FirstOrDefault(mi => mi.Name == projection.SourceMember.Name)
+                MemberInfo destMemberInfo = destMembers.FirstOrDefault(mi => mi.Name == projection.SourceMember.Name)
                     ?? throw new Exception($"Destination type does not have member {projection.SourceMember.Name} for project to.");
 
-                return GetUnderlyingType(destMember) switch
-                {
-                    Type classType when classType.IsClass && projection.InnerProjections is not null
-                        => Expression.Bind(
-                            destMember,
-                            Expression.Condition(
-                                Expression.Equal(Expression.MakeMemberAccess(parameterExpression, projection.SourceMember), Expression.Constant(null)),
-                                Expression.Constant(null, classType),
-                                CreateObjectProjection(classType, projection.InnerProjections, Expression.MakeMemberAccess(parameterExpression, projection.SourceMember)))),
+                MemberExpression sourceMember = Expression.MakeMemberAccess(source, projection.SourceMember);
 
-                    _ => Expression.Bind(destMember, Expression.MakeMemberAccess(parameterExpression, projection.SourceMember)),
-                };
+                if (projection.InnerProjections is null or { Count: 0 })
+                {
+                    return Expression.Bind(destMemberInfo, sourceMember);
+                }
+                else
+                {
+                    Expression expression = GetUnderlyingType(destMemberInfo) switch
+                    {
+                        Type valueType when projection.InnerProjections is null or { Count: 0 }
+                            => sourceMember,
+
+                        Type enumerableType when GetEnumerableElementType(enumerableType) is Type elementType
+                            => Expression.Condition(
+                                Expression.Equal(sourceMember, Expression.Constant(null, sourceMember.Type)),
+                                Expression.Constant(null, enumerableType),
+                                CreateEnumerableProjection(sourceMember, elementType, projection.InnerProjections)),
+
+                        Type classType when classType.IsClass
+                            => Expression.Condition(
+                                Expression.Equal(sourceMember, Expression.Constant(null, sourceMember.Type)),
+                                Expression.Constant(null, classType),
+                                CreateObjectProjection(sourceMember, classType, projection.InnerProjections)),
+
+                        _
+                            => sourceMember,
+                    };
+
+                    return Expression.Bind(destMemberInfo, expression);
+                }
             });
 
-        return Expression.MemberInit(Expression.New(type), bindings);
+        return Expression.MemberInit(Expression.New(destType), bindings);
+    }
+
+    private static MethodCallExpression CreateEnumerableProjection(Expression source, Type destElementType, ICollection<Projection> projections)
+    {
+        if (GetEnumerableElementType(source.Type) is not Type sourceElementType)
+        {
+            throw new InvalidOperationException();
+        }
+
+        ParameterExpression sourceElement = Expression.Parameter(sourceElementType, "item");
+
+        MethodCallExpression expression = Expression.Call(
+            null,
+            ReflectionHelper.SelectMethodInfo.MakeGenericMethod(sourceElementType, destElementType),
+            source,
+            Expression.Lambda(CreateObjectProjection(sourceElement, destElementType, projections), sourceElement));
+
+        return expression;
     }
 
     private static Projection[] CreateProjections(Type type, IEnumerable<SelectItem> selectItems, ProjectionOptions options)
     {
+        if (GetEnumerableElementType(type) is Type elementType)
+        {
+            type = elementType;
+        }
+
         MemberInfo[] members = type.GetMembers(BindingFlags.Public | BindingFlags.Instance)
             .Where(mi => mi.MemberType is MemberTypes.Property or MemberTypes.Field)
             .ToArray();
@@ -107,13 +150,17 @@ public static class ProjectionBuilder<T>
 
     private static MemberSpec CreateMemberSpec(Projection projection)
     {
+        Type sourceMemberType = GetUnderlyingType(projection.SourceMember);
+        Type? sourceMemberElementType = GetEnumerableElementType(sourceMemberType);
+
         return new MemberSpec
         {
             Name = projection.SourceMember.Name,
-            Type = projection.InnerProjections is null
-                ? GetUnderlyingType(projection.SourceMember)
-                : null,
             MemberType = GetMemberType(projection),
+            IsEnumerable = sourceMemberElementType is not null,
+            Type = projection.InnerProjections is null
+                ? sourceMemberElementType ?? sourceMemberType
+                : null,
             TypeSpec = projection.InnerProjections is not null
                 ? new TypeSpec { Members = projection.InnerProjections.Select(CreateMemberSpec).ToArray() }
                 : null,
@@ -140,6 +187,19 @@ public static class ProjectionBuilder<T>
                 _ => throw new NotImplementedException("Only fields and properties can be projected."),
             },
         };
+
+    private static Type? GetEnumerableElementType(Type type)
+    {
+        if (type == typeof(string))
+        {
+            return null;
+        }
+
+        return new[] { type }.Union(type.GetInterfaces())
+            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+            ?.GetGenericArguments()
+            .FirstOrDefault();
+    }
 
     private static string GetProjectionKey(SortedSet<SelectItem> items)
         => string.Join(',', items.Select(x => x.Items.Count == 0 ? x.Name : $"{x.Name}({GetProjectionKey(x.Items)})"));
