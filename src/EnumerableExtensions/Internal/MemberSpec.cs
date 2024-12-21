@@ -18,7 +18,10 @@ public class MemberSpec : ValueObject
     /// </summary>
     required public MemberTypes MemberType { get; init; }
 
-    public bool IsArray { get; init; } = false;
+    /// <summary>
+    /// Gets a value indicating whether the member is a collection type.
+    /// </summary>
+    public bool IsEnumerable { get; init; }
 
     /// <summary>
     /// Gets the data type of the member.

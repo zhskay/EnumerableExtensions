@@ -118,11 +118,11 @@ public static class DynamicTypeBuilder
         Type type = member.Type is not null
             ? member.Type
             : member.TypeSpec is not null
-                ? CreateDynamicType(member.TypeSpec)
+                ? GetOrCreateDynamicType(member.TypeSpec)
                 : throw new DynamicTypeBuilderException("Specify Type or TypeSpec");
 
-        return member.IsArray
-            ? type.MakeArrayType()
+        return member.IsEnumerable
+            ? typeof(IEnumerable<>).MakeGenericType(type)
             : type;
     }
 

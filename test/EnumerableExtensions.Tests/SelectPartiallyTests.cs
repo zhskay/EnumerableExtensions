@@ -19,6 +19,7 @@ public class SelectPartiallyTests
             Inner = new() { Id = 3, Name = "InnerName" },
             InnerArray = [new() { Id = 4, Name = "ArrayItem" }, new() { Id = 5, Name = "ArrayItem2" }],
             InnerList = [new() { Id = 6, Name = "ListItem" }, new() { Id = 7, Name = "ListItem2" }],
+            InnerEnumerable = [new() { Id = 8, Name = "EnumerableItem" }, new() { Id = 9, Name = "EnumerableItem2" }],
         },
         new()
         {
@@ -56,8 +57,12 @@ public class SelectPartiallyTests
     [InlineData("Id,InnerArray(Id)", ProjectionType.Field, """[{"Id":1,"InnerArray":[{"Id":4},{"Id":5}]},{"Id":2}]""")]
 
     // inner list
-    // [InlineData("Id,InnerList", ProjectionType.Field, """[{"Id":1,"InnerList":[{"Id":6,"Name":"ListItem"},{"Id":7,"Name":"ListItem2"}]},{"Id":2}]""")]
-    // [InlineData("Id,InnerList(Id,Name)", ProjectionType.Field, """[{"Name":"Name","Address":"Address"},{"Name":"Name2","Address":"Address2"}]""")]
+    [InlineData("Id,InnerList", ProjectionType.Field, """[{"Id":1,"InnerList":[{"Id":6,"Name":"ListItem"},{"Id":7,"Name":"ListItem2"}]},{"Id":2}]""")]
+    [InlineData("Id,InnerList(Id,Name)", ProjectionType.Field, """[{"Id":1,"InnerList":[{"Id":6,"Name":"ListItem"},{"Id":7,"Name":"ListItem2"}]},{"Id":2}]""")]
+
+    // inner enumerable
+    [InlineData("Id,InnerEnumerable", ProjectionType.Field, """[{"Id":1,"InnerEnumerable":[{"Id":8,"Name":"EnumerableItem"},{"Id":9,"Name":"EnumerableItem2"}]},{"Id":2}]""")]
+    [InlineData("Id,InnerEnumerable(Id)", ProjectionType.Field, """[{"Id":1,"InnerEnumerable":[{"Id":8},{"Id":9}]},{"Id":2}]""")]
     public void SelectPartially_ItemList_ShouldReturnOnlySelectedMembers(string select, ProjectionType type, string expected)
     {
         List<object> result = TestItems.AsQueryable().SelectPartially(select, new() { MemberType = type }).ToList();
@@ -84,5 +89,7 @@ public class SelectPartiallyTests
         public TestClass[] InnerArray { get; set; }
 
         public List<TestClass> InnerList { get; set; }
+
+        public IEnumerable<TestClass> InnerEnumerable { get; set; }
     }
 }
