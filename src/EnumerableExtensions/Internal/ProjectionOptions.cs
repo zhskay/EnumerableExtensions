@@ -12,5 +12,5 @@ public class ProjectionOptions
     /// This specifies whether the dynamically generated class will have fields or properties for its members.
     /// The default value is <see cref="ProjectionType.Field" />.
     /// </remarks>
-    public ProjectionType MemberType { get; init; } = ProjectionType.Field;
+    public ProjectionType ProjectionType { get; init; } = ProjectionType.Field;
 }
