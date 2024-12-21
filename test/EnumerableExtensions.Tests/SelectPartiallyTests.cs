@@ -65,7 +65,7 @@ public class SelectPartiallyTests
     [InlineData("Id,InnerEnumerable(Id)", ProjectionType.Field, """[{"Id":1,"InnerEnumerable":[{"Id":8},{"Id":9}]},{"Id":2}]""")]
     public void SelectPartially_ItemList_ShouldReturnOnlySelectedMembers(string select, ProjectionType type, string expected)
     {
-        List<object> result = TestItems.AsQueryable().SelectPartially(select, new() { MemberType = type }).ToList();
+        List<object> result = TestItems.AsQueryable().SelectPartially(select, new() { ProjectionType = type }).ToList();
 
         string serialized = JsonSerializer.Serialize(result, options: new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
 

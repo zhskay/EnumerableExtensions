@@ -1,4 +1,5 @@
-﻿using EnumerableExtensions.Internal;
+﻿using EnumerableExtensions.Exceptions;
+using EnumerableExtensions.Internal;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
@@ -29,7 +30,7 @@ public class DynamicTypeBuilderTests
             typeof(string),
         ];
 
-        var specification = new TypeSpec
+        TypeSpec specification = new()
         {
             Name = "Foo",
             BaseType = typeof(TestClass),
@@ -37,7 +38,7 @@ public class DynamicTypeBuilderTests
                 .Union(types.Select(type => new MemberSpec() { Name = $"{type.Name}Property", Type = type, MemberType = MemberTypes.Property, }))
                 .ToList(),
         };
-        var type = DynamicTypeBuilder.GetOrCreateDynamicType(specification);
+        Type type = DynamicTypeBuilder.GetOrCreateDynamicType(specification);
 
         Assert.Multiple(() =>
         {
@@ -59,7 +60,7 @@ public class DynamicTypeBuilderTests
     [Fact]
     public void GetOrCreateDynamicType_TypeWithInnerType_ShouldReturnDynamicType()
     {
-        var specification = new TypeSpec
+        TypeSpec specification = new()
         {
             Name = "Bar",
             BaseType = typeof(TestClass),
@@ -89,7 +90,7 @@ public class DynamicTypeBuilderTests
                 },
             ],
         };
-        var type = DynamicTypeBuilder.GetOrCreateDynamicType(specification);
+        Type type = DynamicTypeBuilder.GetOrCreateDynamicType(specification);
 
         Assert.Multiple(() =>
         {
@@ -108,6 +109,32 @@ public class DynamicTypeBuilderTests
             Assert.Equal("DeeplyInnerObject", deelpyInnerProperty?.Name);
             Assert.Equal("DeeplyInnerType", deelpyInnerProperty?.PropertyType.Name);
         });
+    }
+
+    [Fact]
+    public void GetOrCreateDynamicType_TypeMemberWithNoType_ShouldThrowException()
+    {
+        TypeSpec specification = new()
+        {
+            Name = "Baz",
+            BaseType = typeof(TestClass),
+            Members = [new MemberSpec { Name = "InvalidMember", MemberType = MemberTypes.Property }],
+        };
+
+        Assert.Throws<DynamicTypeBuilderException>(() => DynamicTypeBuilder.GetOrCreateDynamicType(specification));
+    }
+
+    [Fact]
+    public void GetOrCreateDynamicType_TypeMemberWithInvalidMemberType_ShouldThrowException()
+    {
+        TypeSpec specification = new()
+        {
+            Name = "Baz",
+            BaseType = typeof(TestClass),
+            Members = [new MemberSpec { Name = "InvalidMember", Type = typeof(int), MemberType = MemberTypes.Method }],
+        };
+
+        Assert.Throws<DynamicTypeBuilderException>(() => DynamicTypeBuilder.GetOrCreateDynamicType(specification));
     }
 
     public class TestClass
