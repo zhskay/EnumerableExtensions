@@ -55,16 +55,18 @@ public static class DynamicTypeBuilder
 
         foreach (MemberSpec memberSpec in typeSpec.Members)
         {
-            Type memberType = GetMemberType(memberSpec);
+            Type type = GetTypeOfMember(memberSpec);
 
             switch (memberSpec.MemberType)
             {
                 case MemberTypes.Field:
-                    DefineField(typeBuilder, memberSpec.Name, memberType);
+                    DefineField(typeBuilder, memberSpec.Name, type);
                     break;
                 case MemberTypes.Property:
-                    DefineProperty(typeBuilder, memberSpec.Name, memberType);
+                    DefineProperty(typeBuilder, memberSpec.Name, type);
                     break;
+                default:
+                    throw new DynamicTypeBuilderException("Only fields and properties can be created.");
             }
         }
 
@@ -113,7 +115,7 @@ public static class DynamicTypeBuilder
                 .SetCustomAttribute(attributeBuilder);
     }
 
-    private static Type GetMemberType(MemberSpec member)
+    private static Type GetTypeOfMember(MemberSpec member)
     {
         Type type = member.Type is not null
             ? member.Type

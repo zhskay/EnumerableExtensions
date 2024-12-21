@@ -47,7 +47,7 @@ public static class ProjectionBuilder<T>
         //         ValueType = x.PartialObject.ValueType,
         //         ...
         //     },
-        //     Array = x.Array.Select(item => new DestItem { ValueType = item.ValueType, ... })
+        //     Enumarable = x.Enumarable.Select(item => new DestinationItem { ValueType = item.ValueType, ... })
         // }
         return Expression.Lambda<Func<T, object>>(CreateObjectProjection(sourceElement, dynamicType, projections), sourceElement);
     }
@@ -66,35 +66,28 @@ public static class ProjectionBuilder<T>
 
                 MemberExpression sourceMember = Expression.MakeMemberAccess(source, projection.SourceMember);
 
-                if (projection.InnerProjections is null or { Count: 0 })
+                Expression expression = GetUnderlyingType(destMemberInfo) switch
                 {
-                    return Expression.Bind(destMemberInfo, sourceMember);
-                }
-                else
-                {
-                    Expression expression = GetUnderlyingType(destMemberInfo) switch
-                    {
-                        Type valueType when projection.InnerProjections is null or { Count: 0 }
-                            => sourceMember,
+                    Type type when projection.InnerProjections is null or { Count: 0 }
+                        => sourceMember,
 
-                        Type enumerableType when GetEnumerableElementType(enumerableType) is Type elementType
-                            => Expression.Condition(
-                                Expression.Equal(sourceMember, Expression.Constant(null, sourceMember.Type)),
-                                Expression.Constant(null, enumerableType),
-                                CreateEnumerableProjection(sourceMember, elementType, projection.InnerProjections)),
+                    Type enumerableType when GetEnumerableElementType(enumerableType) is Type elementType
+                        => Expression.Condition(
+                            Expression.Equal(sourceMember, Expression.Constant(null, sourceMember.Type)),
+                            Expression.Constant(null, enumerableType),
+                            CreateEnumerableProjection(sourceMember, elementType, projection.InnerProjections)),
 
-                        Type classType when classType.IsClass
-                            => Expression.Condition(
-                                Expression.Equal(sourceMember, Expression.Constant(null, sourceMember.Type)),
-                                Expression.Constant(null, classType),
-                                CreateObjectProjection(sourceMember, classType, projection.InnerProjections)),
+                    Type classType when classType.IsClass
+                        => Expression.Condition(
+                            Expression.Equal(sourceMember, Expression.Constant(null, sourceMember.Type)),
+                            Expression.Constant(null, classType),
+                            CreateObjectProjection(sourceMember, classType, projection.InnerProjections)),
 
-                        _
-                            => sourceMember,
-                    };
+                    _
+                        => sourceMember,
+                };
 
-                    return Expression.Bind(destMemberInfo, expression);
-                }
+                return Expression.Bind(destMemberInfo, expression);
             });
 
         return Expression.MemberInit(Expression.New(destType), bindings);
@@ -141,7 +134,7 @@ public static class ProjectionBuilder<T>
 
             return new Projection
             {
-                MemberType = options.MemberType,
+                ProjectionType = options.ProjectionType,
                 SourceMember = member,
                 InnerProjections = innerProjections,
             };
@@ -176,7 +169,7 @@ public static class ProjectionBuilder<T>
         };
 
     private static MemberTypes GetMemberType(Projection projection)
-        => projection.MemberType switch
+        => projection.ProjectionType switch
         {
             ProjectionType.Field => MemberTypes.Field,
             ProjectionType.Property => MemberTypes.Property,
@@ -190,6 +183,7 @@ public static class ProjectionBuilder<T>
 
     private static Type? GetEnumerableElementType(Type type)
     {
+        // bypass string type
         if (type == typeof(string))
         {
             return null;
@@ -208,7 +202,7 @@ public static class ProjectionBuilder<T>
     {
         required public MemberInfo SourceMember { get; init; }
 
-        required public ProjectionType MemberType { get; init; }
+        required public ProjectionType ProjectionType { get; init; }
 
         required public ICollection<Projection>? InnerProjections { get; init; }
     }
