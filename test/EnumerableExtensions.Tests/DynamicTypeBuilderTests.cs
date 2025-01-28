@@ -6,6 +6,7 @@ using System.Reflection;
 namespace EnumerableExtensions.Tests;
 
 [ExcludeFromCodeCoverage]
+[Collection("Non-Parallel Collection")]
 public class DynamicTypeBuilderTests
 {
     [Fact]

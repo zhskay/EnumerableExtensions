@@ -1,6 +1,5 @@
 ﻿using EnumerableExtensions.Exceptions;
 using EnumerableExtensions.Parsing;
-using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 
@@ -10,26 +9,25 @@ namespace EnumerableExtensions.Internal;
 /// Generates and cache <see cref="Expression{Func{T, object}}"/> for projections.
 /// </summary>
 /// <typeparam name="T"> The type of the data in the data source. </typeparam>
-public static class ProjectionBuilder<T>
+public static class ProjectionBuilder
 {
-    private static readonly ConcurrentDictionary<string, Expression<Func<T, object>>> Cache = new();
-
     /// <summary>
     /// Returns <see cref="Expression{Func{T, object}}"/> that projects element of the source type to type that contains only specified fields.
     /// </summary>
     /// <param name="select"> The select expression defining the fields to include in the projection. </param>
     /// <param name="options"> Projection options. </param>
     /// <returns> An <see cref="Expression{Func{T, object}}"/> that projects element of the source type to type that contains only specified fields. </returns>
-    public static Expression<Func<T, object>> Build(string select, ProjectionOptions options)
+    public static Expression<Func<T, object>> Build<T>(string select, ProjectionOptions options)
     {
         SortedSet<SelectItem> items = SelectRecursiveParser.ParseSelect(select);
 
         string key = GetProjectionKey(items);
 
-        return Cache.GetOrAdd(key, (_) => BuildInternal(items, options));
+        return DynamicTypeCache.Projections.GetOrAdd(key, (_) => BuildInternal<T>(items, options)) as Expression<Func<T, object>>
+            ?? throw new DynamicTypeBuilderException($"Failed to cast expression for type {typeof(T).FullName}.");
     }
 
-    private static Expression<Func<T, object>> BuildInternal(SortedSet<SelectItem> selectItems, ProjectionOptions options)
+    private static Expression<Func<T, object>> BuildInternal<T>(SortedSet<SelectItem> selectItems, ProjectionOptions options)
     {
         Projection[] projections = CreateProjections(typeof(T), selectItems, options);
 
