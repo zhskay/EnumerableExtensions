@@ -1,5 +1,4 @@
 ﻿using EnumerableExtensions.Exceptions;
-using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Text;
@@ -15,17 +14,6 @@ namespace EnumerableExtensions.Internal;
 /// </remarks>
 public static class DynamicTypeBuilder
 {
-    private static readonly AssemblyName AssemblyName = new() { Name = "DynamicLinqTypes" };
-    private static readonly ModuleBuilder ModuleBuilder;
-
-    private static readonly ConcurrentDictionary<string, Type> BuiltTypes = new();
-
-    static DynamicTypeBuilder()
-    {
-        ModuleBuilder = AssemblyBuilder.DefineDynamicAssembly(AssemblyName, AssemblyBuilderAccess.RunAndCollect)
-            .DefineDynamicModule(AssemblyName.Name);
-    }
-
     /// <summary>
     /// Returns dynamically created <see cref="Type" /> based on the specification.
     /// </summary>
@@ -33,21 +21,24 @@ public static class DynamicTypeBuilder
     /// <returns>A <see cref="Type" /> that corresponds to the given specification.</returns>
     public static Type GetOrCreateDynamicType(TypeSpec typeSpec)
     {
-        string typeKey = GetTypeKey(typeSpec);
+        AssemblyCreatingStrategy strategy = DynamicTypeCache.AssemblyCreatingStrategyFactoryFunc();
 
-        return BuiltTypes.GetOrAdd(typeKey, (_) => CreateDynamicType(typeSpec));
+        return GetOrCreateDynamicType(typeSpec, strategy);
     }
 
-    /// <summary>
-    /// Creates a new dynamically generated <see cref="Type" /> based on the specification.
-    /// </summary>
-    /// <param name="typeSpec">The specification for the dynamic type.</param>
-    /// <returns>A <see cref="Type" /> that corresponds to the given specification.</returns>
-    public static Type CreateDynamicType(TypeSpec typeSpec)
+    private static Type GetOrCreateDynamicType(TypeSpec typeSpec, AssemblyCreatingStrategy strategy)
+    {
+        string typeKey = GetTypeKey(typeSpec);
+
+        return DynamicTypeCache.BuiltTypes.GetOrAdd(typeKey, (_, strategy) => CreateDynamicType(typeSpec, strategy), strategy);
+    }
+
+    private static Type CreateDynamicType(TypeSpec typeSpec, AssemblyCreatingStrategy strategy)
     {
         string typeName = typeSpec.Name ?? "DynamicType" + typeSpec.GetHashCode();
+        ModuleBuilder moduleBuilder = strategy.GetModuleBuilder(typeName);
 
-        TypeBuilder typeBuilder = ModuleBuilder.DefineType(
+        TypeBuilder typeBuilder = moduleBuilder.DefineType(
             typeName,
             TypeAttributes.Public | TypeAttributes.Class,
             typeSpec.BaseType,
@@ -55,7 +46,7 @@ public static class DynamicTypeBuilder
 
         foreach (MemberSpec memberSpec in typeSpec.Members)
         {
-            Type type = GetTypeOfMember(memberSpec);
+            Type type = GetType(memberSpec, strategy);
 
             switch (memberSpec.MemberType)
             {
@@ -115,12 +106,12 @@ public static class DynamicTypeBuilder
                 .SetCustomAttribute(attributeBuilder);
     }
 
-    private static Type GetTypeOfMember(MemberSpec member)
+    private static Type GetType(MemberSpec member, AssemblyCreatingStrategy strategy)
     {
         Type type = member.Type is not null
             ? member.Type
             : member.TypeSpec is not null
-                ? GetOrCreateDynamicType(member.TypeSpec)
+                ? GetOrCreateDynamicType(member.TypeSpec, strategy)
                 : throw new DynamicTypeBuilderException("Specify Type or TypeSpec");
 
         return member.IsEnumerable

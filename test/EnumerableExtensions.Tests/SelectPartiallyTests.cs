@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 namespace EnumerableExtensions.Tests;
 
 [ExcludeFromCodeCoverage]
+[Collection("Non-Parallel Collection")]
 public class SelectPartiallyTests
 {
     private static readonly List<TestClass> TestItems = [
